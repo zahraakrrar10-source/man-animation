@@ -240,7 +240,7 @@ export class Strand {
 export type Ray = { o: THREE.Vector3; d: THREE.Vector3; len: number; core: boolean };
 let sight: Ray[] = [];
 /** does any sight line pass through this box? (centre lines only for small props, so they can still frame a shot) */
-const inTheWay = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, coreOnly = false) => {
+export const inTheWay = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, coreOnly = false) => {
   for (const { o, d, len, core } of sight) {
     if (coreOnly && !core) continue;
     let t0 = 0, t1 = len;

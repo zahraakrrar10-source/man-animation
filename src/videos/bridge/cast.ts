@@ -119,6 +119,10 @@ export type CamInfo = { pos: THREE.Vector3; right: THREE.Vector3; sun?: THREE.Ve
 
 const hh = (i: number, s = 0) => { const v = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return v - Math.floor(v); };
 const q = (v: number, n = 120) => Math.round(v * n) / n;
+/** subtle, deterministic per-character scale (+/-6%) so the marching column and crowds are not uniform clones */
+const charScale = (i: number) => 0.94 + 0.12 * hh(i);
+/** subtle, deterministic per-character height offset (+/-4 cm) so no two adults stand at exactly the same eye level */
+const charDy = (i: number) => (hh(i) - 0.5) * 0.08;
 const SOLDIER = [0, 1, 2, 3].map((v) => soldier(v));
 const BARE = [0, 1, 2, 3].map((v) => soldier(v, { hat: null }));
 const FOLK = [0, 1, 2, 3, 4, 5].map((v) => townsfolk(v));
@@ -132,7 +136,7 @@ const tier = (d: number): [number, number, number] =>
 // ---------------- light ----------------
 const SUN = new THREE.Vector3(0.5, 0.75, -0.4).normalize();
 const tmp = new THREE.Vector3();
-let LNAME: "day" | "golden" = "day";
+let LNAME: "day" | "golden" | "night" = "day";
 const sunOf = (root: THREE.Object3D) => {
   let s: THREE.DirectionalLight | null = null;
   root.traverse((o) => { if (!s && o instanceof THREE.DirectionalLight && o.castShadow) s = o; });
@@ -202,7 +206,7 @@ const person = (cam: CamInfo, who: Who, x: number, y: number, z: number, view: {
 /** ground shadow under a standing / sitting card (review rounds 2-4), multiply, blue-violet: a TIGHT contact pool right under
  *  the feet (~.5 on screen at the core) so nobody floats, plus by day (cards cast no real shadow) a lighter soft tail
  *  stretched AWAY from the sun, length ~1.6 m / tan(sun elevation), capped. Golden: world.ts casts real card shadows. */
-const CONTACT: Record<"day" | "golden", [number, number, number]> = { day: [0.2, 0.21, 0.33], golden: [0.24, 0.2, 0.33] };
+const CONTACT: Record<"day" | "golden" | "night", [number, number, number]> = { day: [0.2, 0.21, 0.33], golden: [0.24, 0.2, 0.33], night: [0.12, 0.13, 0.26] };
 const TAIL: [number, number, number] = [0.42, 0.44, 0.62];
 const toSrgb = (v: number) => { const c = clamp01(v); return c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055; };
 const hexOf = (c: [number, number, number], k: number) => "#" + c.map((v) => Math.round(255 * toSrgb(1 - (1 - v) * k)).toString(16).padStart(2, "0")).join("");
@@ -268,7 +272,7 @@ const column = (id: number, t: number, b: BridgeState, cam: CamInfo, out: Stage)
     const fo: FrontOpts = { phase: mode === "march" ? ph : 0, expr, mode, look, blink, lift: 60 * st, tilt };
     // side views: the stance foot keeps pace with the column (0.8 m steps at 2 steps/s), foreshortened by the view
     const so: SideOpts = { phase: mode === "march" ? ph : 0, expr, mode: mode === "march" ? "march" : "stand", blink, stomp: st, stride: view.fs };
-    out.places.push(person(cam, who, x, y, z, mode === "fall" || mode === "sit" ? { side: false, mirror: false } : view, fo, so));
+    out.places.push(person(cam, who, x, y + charDy(i), z, mode === "fall" || mode === "sit" ? { side: false, mirror: false } : view, fo, so, charScale(i)));
     if (mode === "march" || mode === "stand") blob(out, x, y, z);
     // whistled notes drift up from whistlers near the lens
     if (expr === "whistle" && (id === 6 || id === 1 || id === 13) && cam.pos.distanceTo(tmp.set(x, y, z)) < 16) {
@@ -289,7 +293,7 @@ const sitters = (cam: CamInfo, t: number, out: Stage, spots: [number, number, nu
     const bare = i % 3 === 1;
     const v = vOf(i + 3), who: Who = { i, o: bare ? BARE[v] : SOLDIER[v], okey: `${bare ? "b" : "s"}${v}` };
     const expr = exprs(i), bob = water ? 0.03 * Math.sin(t * 2.2 + i) : 0;
-    out.places.push(person(cam, who, x, y + bob, z, { side: false, mirror: false }, { mode: "sit", expr, blink: lidAt(t, i), look: 0 }, {}));
+    out.places.push(person(cam, who, x, y + bob + charDy(i), z, { side: false, mirror: false }, { mode: "sit", expr, blink: lidAt(t, i), look: 0 }, {}, charScale(i)));
     if (stars(i)) {
       const u = (t * 0.9 + hh(i)) % 1;
       out.fx.push({ key: `stars${q(u, 30)}`, cw: 420, ch: 210, draw: (p) => fxStars(p, q(u, 30)), x, y: y + bob + 1.3, z, w: 0.75, h: 0.375 });
@@ -344,7 +348,7 @@ const townsfolkAt = (cam: CamInfo, t: number, out: Stage) => {
     const who: Who = { i: i + 200, o, okey: kid ? "kid" : `f${i % 6}` };
     const expr: Expr = (["smile", "grin", "laugh", "smile_closed"] as Expr[])[i % 4];
     const fo: FrontOpts = { mode: "stand", expr, wave: i % 3 === 2 || !on ? undefined : q(Math.sin(t * 9 + i * 1.3), 30), blink: lidAt(t, i + 40) };
-    out.places.push(person(cam, who, x, D0 + hop, z, { side: false, mirror: false }, fo, {}, kid ? 0.72 : 1));
+    out.places.push(person(cam, who, x, D0 + hop + charDy(i + 200), z, { side: false, mirror: false }, fo, {}, (kid ? 0.72 : 1) * charScale(i + 200)));
     blob(out, x, D0, z, kid ? 0.72 : 1, hop > 0 ? 0.6 : 1);
   });
 };
@@ -363,7 +367,7 @@ const tourists = (cam: CamInfo, t: number, out: Stage) => {
     const fo: FrontOpts = { mode: "stroll", phase, expr, look: Math.max(-1, Math.min(1, look)), prop, blink: lidAt(t, i) };
     const view = viewOf(cam, x, z, 0, -1);
     const so: SideOpts = { mode: "march", phase, expr, stomp: 0.55, stride: 0.875 * view.fs };
-    out.places.push(person(cam, who, x, D0, z, view, fo, so));
+    out.places.push(person(cam, who, x, D0 + charDy(i), z, view, fo, so, charScale(i)));
     blob(out, x, D0, z);
   }
 };
@@ -383,7 +387,7 @@ const hammerK = (t: number) => {
 };
 const officer = (cam: CamInfo, t: number, out: Stage) => {
   const fo: FrontOpts = { mode: "stand", expr: "stern", prop: ["hammer", q(hammerK(t), 30)], blink: lidAt(t, 99), facing: 1 };
-  out.places.push(person(cam, { i: 99, o: OFFICER, okey: "off" }, 3.35, D0, -31.55, { side: false, mirror: false }, fo, {}));
+  out.places.push(person(cam, { i: 99, o: OFFICER, okey: "off" }, 3.35, D0 + charDy(99), -31.55, { side: false, mirror: false }, fo, {}, charScale(99)));
   blob(out, 3.35, D0, -31.55, 1.1);
   for (const th of HITS) if (t >= th && t < th + 5 / FPS) {
     const u = (t - th) / (5 / FPS);
@@ -422,8 +426,42 @@ const park = (cam: CamInfo, t: number, out: Stage) => {
   const step = k > 0 ? smooth((t - (pushes[k - 1] + 0.35)) / (SWING_T - 0.7)) : 1;
   const px = prev.px + (cur.px - prev.px) * step, pz = PARK[2] + 0.1;
   const so: SideOpts = { mode: "push", pose: q(push, 40), expr: push > 0.3 ? "grin" : "smile", blink: lidAt(t, 77), hand: cur.hand };
-  out.places.push({ ...person(cam, { i: 77, o: PARENT, okey: "parent" }, px, D0, pz, { side: true, mirror: true }, {}, so), mirror: false, yaw: Math.PI });
+  out.places.push({ ...person(cam, { i: 77, o: PARENT, okey: "parent" }, px, D0 + charDy(77), pz, { side: true, mirror: true }, {}, so, charScale(77)), mirror: false, yaw: Math.PI });
   blob(out, px, D0, pz);
+};
+
+/** Benchmark Shot 1: deadpan close-up character (pirate chef / officer) facing the camera. */
+const closeupOfficer = (cam: CamInfo, t: number, out: Stage) => {
+  const fo: FrontOpts = { mode: "stand", expr: "stern", blink: lidAt(t, 99), facing: 1 };
+  out.places.push(person(cam, { i: 99, o: OFFICER, okey: "off" }, 0, D0, -11.5, { side: false, mirror: false }, fo, {}, 1.0));
+  blob(out, 0, D0, -11.5, 1.1);
+};
+
+/** Benchmark Shot 2: two-shot on the plank deck. The officer (screen-left) and a blue-coated townsman
+ *  (screen-right) stand 1.7 m apart in profile, facing inward under the low raking sun. */
+const deckTwoShot = (cam: CamInfo, t: number, out: Stage) => {
+  const offFo: FrontOpts = { mode: "stand", expr: "stern", blink: lidAt(t, 99) };
+  out.places.push(person(cam, { i: 99, o: OFFICER, okey: "off" }, 0.85, D0, -11.5,
+    { side: true, mirror: false }, offFo, { mode: "stand", expr: "stern", blink: lidAt(t, 99) }, 1.0));
+  blob(out, 0.85, D0, -11.5, 1.15);
+  const town = FOLK[0];
+  out.places.push(person(cam, { i: 41, o: town, okey: "f0" }, -0.85, D0, -11.9,
+    { side: true, mirror: true }, {}, { mode: "stand", expr: "neutral", blink: lidAt(t, 41) }, 1.0));
+  blob(out, -0.85, D0, -11.9, 1.05);
+};
+
+/** Benchmark Shot 3: night wide. Both figures face the lens and read as warm shapes against the cool
+ *  deck; the lantern (built in world.ts) stands screen-left, so the key rakes across them from that side
+ *  and their contact pools and cast shadows stay visible on the planks. */
+const nightDeck = (cam: CamInfo, t: number, out: Stage) => {
+  const offFo: FrontOpts = { mode: "stand", expr: "stern", blink: lidAt(t, 99), facing: 1 };
+  out.places.push(person(cam, { i: 99, o: OFFICER, okey: "off" }, 0.65, D0, -12.55,
+    { side: false, mirror: false }, offFo, {}, 1.0));
+  blob(out, 0.65, D0, -12.55, 1.15);
+  const town = FOLK[2];
+  out.places.push(person(cam, { i: 42, o: town, okey: "f2" }, -0.75, D0, -12.75,
+    { side: false, mirror: false }, { mode: "stand", expr: "neutral", blink: lidAt(t, 42), facing: -1 }, {}, 1.0));
+  blob(out, -0.75, D0, -12.75, 1.05);
 };
 
 /** everything with a face in shot `id` at time t */
@@ -450,6 +488,9 @@ export const stage = (id: number, t: number, b: BridgeState, cam: CamInfo): Stag
   }
   if (s.crowd === "tourists") tourists(cam, t, out);
   if (id === 12) park(cam, t, out);
+  if (id === 16) closeupOfficer(cam, t, out);
+  if (id === 17) deckTwoShot(cam, t, out);
+  if (id === 18) nightDeck(cam, t, out);
   return out;
 };
 

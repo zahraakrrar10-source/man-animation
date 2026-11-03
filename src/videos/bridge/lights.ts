@@ -12,7 +12,7 @@ export type LightPreset = {
   sunCol: string; sunI: number; sky: string; ground: string; hemiI: number;         // three lights (unpatched mats only)
   bias: number; normalBias: number;
 };
-export const LIGHTS: Record<"day" | "golden", LightPreset> = {
+export const LIGHTS: Record<"day" | "golden" | "night", LightPreset> = {
   day: {
     az: 75, el: 48,
     lit: [1.58, 1.5, 1.33], shade: [0.3, 0.29, 0.36], lift: [0.05, 0.06, 0.11], lambert: 0.35, sideK: 0.84, term: 0.2,
@@ -31,6 +31,17 @@ export const LIGHTS: Record<"day" | "golden", LightPreset> = {
     sunCol: "#ffab5e", sunI: 5.5, sky: "#d8b0b8", ground: "#8a6a60", hemiI: 0.5,
     bias: -0.0006, normalBias: 0.03,
   },
+  night: {
+    // One warm practical lantern low on the deck is the only key; the world's shaded side is a cool
+    // blue-violet ambient, not black. The lantern itself is built in world.ts (emissive core + halo + pool).
+    az: -100, el: 14,
+    lit: [0.6, 0.32, 0.14], shade: [0.2, 0.24, 0.5], lift: [0, 0, 0], lambert: 0.5, sideK: 0.86, term: 0.1,
+    charTint: [1.0, 0.64, 0.35], charShade: 0.45, charGrad: 0.16, bodyGrad: 0.3, sideTint: [0.5, 0.58, 1.0],
+    blob: [0.09, 0.1, 0.22], actorShadow: true,
+    top: "#090f20", hor: "#2a3558", skyCurve: [0.0, 0.45, 0.85], fog: "#243354", fogNear: 10, fogFar: 110, sunDisc: "#000000",
+    sunCol: "#ff9a48", sunI: 2.2, sky: "#4a5f98", ground: "#121828", hemiI: 0.6,
+    bias: -0.0005, normalBias: 0.03,
+  },
 };
 
 /** world-only look per light (sky stops by elevation in degrees, river colours, cloud palette). All colours are
@@ -42,7 +53,7 @@ export type WorldLook = {
   sat: number;                                                // shade.ts uSat: world albedo saturation (1 = as painted)
   cloud: { lit: string; mid: string; shade: string };
 };
-export const LOOK: Record<"day" | "golden", WorldLook> = {
+export const LOOK: Record<"day" | "golden" | "night", WorldLook> = {
   day: {
     // depth.md 2.2: horizon #9fb6e6 just above the skyline, upper sky #5e93d9 at ~20 deg (grade: frame top #5997e2)
     sky: { c: ["#b8d0ec", "#9cbfea", "#6a9fe0", "#4f8cdb", "#3373cc"], e: [0, 3, 8, 16, 40] },
@@ -59,5 +70,13 @@ export const LOOK: Record<"day" | "golden", WorldLook> = {
     cloud: { lit: "#ffd2a8", mid: "#f2a08f", shade: "#a98fc4" },
     bounce: [0.04, 0.02, 0.0],
     sat: 1.1,
+  },
+  night: {
+    // deep navy overhead, a lifted blue-violet horizon so the fog and far town never read as a black void
+    sky: { c: ["#2a3558", "#232d4e", "#1b2441", "#131a30", "#0a1024"], e: [0, 3, 8, 16, 40] },
+    water: { near: "#10203f", mid: "#0d1a35", far: "#17244a", crest: "#3c5687", trough: "#081126", glint: "#b8ccf6", shade: [0.34, 0.38, 0.6] },
+    cloud: { lit: "#3e4d76", mid: "#2c3959", shade: "#1b2440" },
+    bounce: [0.07, 0.035, 0.012],
+    sat: 1.12,
   },
 };

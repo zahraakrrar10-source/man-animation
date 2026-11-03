@@ -40,7 +40,7 @@ export type BridgeState = { bounce: number; drop: number; snap: number; collapse
 export const deckY = (z: number, b: BridgeState) => D0 + b.bounce * shapeZ(z) - b.drop * DROP_H * dropW(z);
 
 // ---------------- shots ----------------
-export type Light = "day" | "golden";
+export type Light = "day" | "golden" | "night";
 export type Crowd = "march" | "fall" | "water" | "bank" | "tourists" | "none";
 export type ShotDef = { id: number; a: number; b: number; light: Light; crowd: Crowd; tau: (t: number) => number; towns?: boolean };
 export const SHOTS: ShotDef[] = [
@@ -59,6 +59,12 @@ export const SHOTS: ShotDef[] = [
   { id: 13, a: 1620, b: 1735, light: "golden", crowd: "march", tau: (t) => t - 31 },
   { id: 14, a: 1735, b: 1863, light: "day", crowd: "bank", tau: (t) => t },
   { id: 15, a: 1863, b: TOTAL, light: "day", crowd: "tourists", tau: (t) => t, towns: true },
+  // Benchmark Shot 1: sits after the existing timeline (frames 2025-2145) so BridgeShort (0-2024) is unaffected.
+  { id: 16, a: 2025, b: 2145, light: "day", crowd: "none", tau: (t) => t },
+  // Benchmark Shot 2: two-shot on the plank deck (frames 2145-2265), also outside the BridgeShort timeline.
+  { id: 17, a: 2145, b: 2265, light: "day", crowd: "none", tau: (t) => t },
+  // Benchmark Shot 3: night wide with one warm practical lantern (frames 2265-2385), outside the BridgeShort timeline.
+  { id: 18, a: 2265, b: 2385, light: "night", crowd: "none", tau: (t) => t },
 ];
 /** crossfades (frames) at place/time changes; a white 4-frame flash after the hook */
 export const XFADE: Record<number, number> = { 9: 6, 11: 8, 12: 8, 13: 8, 14: 8, 15: 8 };
@@ -138,7 +144,7 @@ export const snapEnd = (snap: number): V3 => {
 
 // ---- framings (f -> camera); each pushes in from the frame its key starts ----
 // shot 1 (hook, flash-forward): wide 3/4 front -> eye-level MS of the front row (was 0.6 m, now 1.4 m) -> boot level
-const S1a = (f: number) => { const F = Fz(1, f); return dolly([7.5, D0 + 2.6, F - 13], [0, D0 + 2.4, F + 5], pushK(f, 0, 0.0025), { fov: 44 }); };
+const S1a = (f: number) => { const F = Fz(1, f); return dolly([6.0, D0 + 3.0, F - 13], [0, D0 + 2.4, F + 5], pushK(f, 0, 0.0025), { fov: 44 }); };
 const S1b = (f: number) => { const F = Fz(1, f); return dolly([1.4, D0 + 1.4, F - 7.2], [0, D0 + 1.7, F + 1.5], pushK(f, 30, 0.002), { fov: 40, roll: -0.04 }); };
 const S1c = (f: number) => { const F = Fz(1, f); return dolly([-0.9, D0 + 0.4, F - 4.2], [0, D0 + 0.55, F + 0.8], pushK(f, 72, 0.003), { fov: 38, roll: 0.04 }); };
 // shot 2 (town aerial): zoom pushes (the last framing sits just behind the near tower); punch on "pride of the whole town"
@@ -194,6 +200,33 @@ const S15c = (f: number): Shot => {
   return { pos: [0, 1, 2].map((i) => r * r * a.pos[i] + 2 * s * r * C[i] + s * s * B[i]) as V3,
     look: [0, 1, 2].map((i) => a.look[i] + (L[i] - a.look[i]) * s) as V3, fov: (a.fov ?? 40) + (44 - (a.fov ?? 40)) * s, roll: 0 };
 };
+// Benchmark Shot 1: deadpan close-up with cropped foreground prop.
+// Eye-level portrait: the lens sits just above the officer's eyes and aims at the chin, so the
+// head + shako fill the top half and the face lands on the upper third. Static framing.
+const S16a = (): Shot => ({
+  pos: [0.7, D0 + 1.56, -14.1] as V3,
+  look: [0, D0 + 1.26, -11.5] as V3,
+  fov: 35,
+  roll: 0.1,
+});
+// Benchmark Shot 2: two-shot on the plank deck.
+// Eye-level and wider than Shot 1: the pair stands 1.7 m apart, the lens ~6.3 m back, so both
+// full-body silhouettes fit the 9:16 frame with the deck and its raking shadows below them.
+const S17a = (): Shot => ({
+  pos: [0.55, D0 + 1.55, -17.8] as V3,
+  look: [0, D0 + 1.22, -11.7] as V3,
+  fov: 40,
+  roll: 0,
+});
+// Benchmark Shot 3: night wide, slight high angle.
+// Static lens ~11 m back and 3 m over the deck: the two full-body figures sit on the middle third,
+// the lantern and its warm pool anchor the screen-left foreground, and the fog-softened town fills the top.
+const S18a = (): Shot => ({
+  pos: [0.9, D0 + 3.05, -23.6] as V3,
+  look: [0.15, D0 + 1.15, -12.4] as V3,
+  fov: 34,
+  roll: 0,
+});
 
 const CAMS: Record<number, Key[]> = {
   1: [
@@ -258,6 +291,9 @@ const CAMS: Record<number, Key[]> = {
     { f: 1890, dur: 30, s: S15b }, // centred on 1905 ("best drilled")
     { f: 1932, cut: true, s: S15c }, // crane pull-out on its own curved path, starts where S15b is (fastest ~1978, whoosh at 1962 mid-acceleration)
   ],
+  16: [{ f: 0, s: S16a }], // Benchmark Shot 1: deadpan close-up with cropped foreground prop
+  17: [{ f: 0, s: S17a }], // Benchmark Shot 2: two-shot on the plank deck
+  18: [{ f: 0, s: S18a }], // Benchmark Shot 3: night wide with a practical lantern
 };
 CAMS[10] = CAMS[9];
 
@@ -318,6 +354,9 @@ export const DOF: Dof[] = [
   { f: 1735, cInf: 8 }, // bank, dazed soldiers behind a foreground cart, focus = look
   { f: 1770, cInf: 12, focus: () => [3.35, D0 + 1.6, -31.55] }, // officer MS at the sign (his eyes), bush in front
   { f: 1863, cInf: 0 }, // tourists (busy crowd beat, kept sharp), crane out
+  { f: 2025, cInf: 14, focus: () => [0, D0 + 1.46, -11.5] }, // Benchmark Shot 1: close-up, eyes sharp, background soft
+  { f: 2145, cInf: 9, focus: () => [0, D0 + 1.4, -11.7] }, // Benchmark Shot 2: both faces sharp, town soft
+  { f: 2265, cInf: 8, focus: () => [0.15, D0 + 1.35, -12.4] }, // Benchmark Shot 3: characters sharp, town fog-soft
 ];
 export const dofAt = (f: number) => {
   let i = 0; while (i + 1 < DOF.length && f >= DOF[i + 1].f) i++;
@@ -325,24 +364,35 @@ export const dofAt = (f: number) => {
   const k = d.dur ? Math.min(1, (f - d.f) / d.dur) : 1;
   return { cInf: p.cInf + (d.cInf - p.cInf) * k, focus: d.focus };
 };
-/** what the lens focuses on (DOF): the DOF table's focus point, else the camera look point */
+/** what the lens focuses on (DOF): the DOF table's focus point, else the camera look point.
+ *  Shots with visible faces default to the eyes so subjects stay readable even when no explicit focus is set. */
 export const focusAt = (id: number, f: number): V3 => {
   const d = dofAt(f);
-  return d.focus ? d.focus(f) : camAt(id, f).look;
+  if (d.focus) return d.focus(f);
+  const s = SHOTS[id - 1];
+  if (s.crowd === "march" || s.crowd === "fall" || s.crowd === "water" || s.crowd === "bank" || s.crowd === "tourists") {
+    return eyes(id)(f);
+  }
+  return camAt(id, f).look;
 };
 
 /** near framing objects: visible while a <= f < b; kit = a GLB name accepted by build.ts prop() */
 // pos = base point (prop()'s x, y, z: the model's base sits on y), s = height in metres (prop()'s h), yaw in radians.
 // They sit at 0.3-0.5 x the focus distance and cover 10-25 % of one frame edge, never a face; they are meant to be
 // in front of the lens, so build them outside prop()'s sight-line test.
-export type Fg = { a: number; b: number; kit: string; pos: V3; s?: number; yaw?: number };
+export type Fg = { a: number; b: number; kit: string; pos: V3; s?: number; yaw?: number; sightLineSafe?: boolean };
 export const FOREGROUND: Fg[] = [
   // ranges stay inside one shot (world.ts shows an entry only inside its own shot, so crossfade layers never see it).
   // sizes fitted to the silhouette (Kenney bushes are sparse: ellipsoid at 0.55 x bbox width matched the renders).
   // river sitters (shots 9-10): no prop since round 4 (the lens sits 2-3 m from the first row; CHAR floats hats/planks there)
   // bank, dazed soldiers (S14a, focus ~7.4 m): a cart in the bottom-left corner at ~2.6 m
-  { a: 1735, b: 1770, kit: "cart", pos: [-3.8, D0, -38.0], s: 0.85, yaw: 0.6 },
+  { a: 1735, b: 1770, kit: "cart", pos: [-3.8, D0, -38.0], s: 0.85, yaw: 0.6, sightLineSafe: true },
   // officer at the sign (S14b, focus 5.7 m): a bush in the bottom-right corner under the sign post, clear of the officer
   // park swing (S12a/b, focus 7-9.5 m): a bush in the bottom-right corner, below the kid's arc
-  { a: 1411, b: 1620, kit: "plant_bushDetailed", pos: [69.65, D0, -79.4], s: 1.2, yaw: 0.4 }, // w 15-27 %, h 18-31 %, 0.36-0.52 x focus
+  { a: 1411, b: 1620, kit: "plant_bushDetailed", pos: [69.65, D0, -79.4], s: 1.2, yaw: 0.4, sightLineSafe: true }, // w 15-27 %, h 18-31 %, 0.36-0.52 x focus
+  // Benchmark Shot 1: cropped cart in the lower-left foreground, 0.6x the face distance and clear of the face
+  // (sightLineSafe: false = always visible, frames the shot).
+  { a: 2025, b: 2145, kit: "cart", pos: [0.85, D0, -12.5], s: 1.15, yaw: 0.45, sightLineSafe: false },
+  // Benchmark Shot 2: no foreground prop. The near deck planks and the long raking rail/hanger shadows
+  // are the foreground layer, so both full-body silhouettes stay clear and readable.
 ];

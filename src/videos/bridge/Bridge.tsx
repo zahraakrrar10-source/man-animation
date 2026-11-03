@@ -23,13 +23,13 @@ import { TOTAL, FLASH_AT, SHOTS, layersAt, dofAt } from "./story";
 export const BRIDGE_FRAMES = TOTAL;
 
 /** A/B switches for test stills only (Remotion inputProps `{ post: { ink: false, ... } }`); everything is on by default. */
-type PostToggles = { ink: boolean; lens: boolean; pre: boolean; bloom: boolean; grade: boolean; grain: boolean };
-const toggles = (): PostToggles => ({ ink: true, lens: true, pre: true, bloom: true, grade: true, grain: false, ...((getInputProps() as { post?: Partial<PostToggles> }).post ?? {}) });
+export type PostToggles = { ink: boolean; lens: boolean; pre: boolean; bloom: boolean; grade: boolean; grain: boolean };
+export const toggles = (): PostToggles => ({ ink: true, lens: true, pre: true, bloom: true, grade: true, grain: false, ...((getInputProps() as { post?: Partial<PostToggles> }).post ?? {}) });
 
 /** Bloom for emissive sources only (depth.md 6.4). Its MIP chain always starts at 540x960 (half of 1080x1920),
  *  whatever the output size, so the glow keeps the same size relative to the frame (e-fold ~30 px at 1080p,
  *  ~1.5 % of the frame height) at 540, 1080 and 1440 widths. ADD blend: HDR-safe (SCREEN darkens values > 1). */
-const makeBloom = () => {
+export const makeBloom = () => {
   const b = new BloomEffect({ blendFunction: BlendFunction.ADD, intensity: 0.5, luminanceThreshold: 1.0, luminanceSmoothing: 0.2, mipmapBlur: true, levels: 6, radius: 0.6 });
   const mip = b.mipmapBlurPass;
   const setSize = mip.setSize.bind(mip);
@@ -39,7 +39,7 @@ const makeBloom = () => {
 
 const fwd = new THREE.Vector3(), fpt = new THREE.Vector3();
 
-const useKit = () => {
+export const useKit = () => {
   const [kit, setKit] = useState<Kit | null>(null);
   const [handle] = useState(() => delayRender("bridge kit"));
   useEffect(() => { loadKit().then((k) => { setKit(k); continueRender(handle); }); }, [handle]);

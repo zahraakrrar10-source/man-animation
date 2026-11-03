@@ -5,3 +5,8 @@ dist
 
 # Ignore the output video from Git but not videos you import into src/.
 out
+
+# Generated renders and temporary files
+renders/
+reference-previews/
+lint-out*.txt

@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { staticFile } from "remotion";
-import { Batch, Strand, boxGeo, V, lam, buildTown, flagTex, Kit, Ray, kitClone } from "./build";
+import { Batch, Strand, boxGeo, V, lam, buildTown, flagTex, Kit, Ray, kitClone, inTheWay } from "./build";
 import { beam, bed, rep, ctex, planksHD, beamHD, stoneHD, cobbleHD, grassHD, chainHD, waterNear, waterFar, cloudHD } from "./paint";
 import { Pen, fxSign } from "./toon";
 import { LIGHTS, LOOK, LightPreset } from "./lights";
@@ -64,7 +64,24 @@ const haloTex = () => ctex("sunHalo", 256, 256, (g) => {
 });
 /** per-shot sun override (lighting.md 9.1 notes: front-light the town wide); story.ts ShotDef sunAz/sunEl win if present */
 // shot 12: the park is ringed by trees and houses, so a low sun ahead-right puts the whole lawn in their shadow
-const SUN_SHOT: Record<number, { az?: number; el?: number }> = { 2: { az: 120 }, 11: { az: -70, el: 8 }, 12: { az: -30, el: 18 } };
+// shot 17 (Benchmark Shot 2): low late-afternoon sun from screen right rakes long rail + character shadows across the deck
+const SUN_SHOT: Record<number, { az?: number; el?: number }> = { 2: { az: 120 }, 11: { az: -70, el: 8 }, 12: { az: -30, el: 18 }, 17: { az: 55, el: 13 }, 18: { az: -100, el: 14 } };
+/** Benchmark Shot 3's practical lantern base on the deck (screen-left of both figures). */
+const LAMP_AT: V3 = [1.45, D0, -11.95];
+/** warm pool on the planks (additive, radial falloff; kept clear of the long cast shadows) */
+const poolTex = () => ctex("practicalPool", 256, 256, (g) => {
+  const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  gr.addColorStop(0, "rgba(255,255,255,0.95)"); gr.addColorStop(0.22, "rgba(255,255,255,0.62)");
+  gr.addColorStop(0.5, "rgba(255,255,255,0.22)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+});
+/** soft round falloff for the lantern glass/halo sprites */
+const glowTex = () => ctex("practicalGlow", 128, 128, (g) => {
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.28, "rgba(255,255,255,0.55)");
+  gr.addColorStop(0.62, "rgba(255,255,255,0.16)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+});
 const smokeTex = () => ctex("smoke", 256, 256, (g) => {
   const p = new Pen(g);
   for (const [x, y, r, c] of [[90, 150, 60, "#8f8d96"], [150, 120, 70, "#a3a1aa"], [170, 165, 55, "#8f8d96"], [120, 100, 50, "#b4b2ba"]] as const) p.ell(x, y, r, r * 0.85, c, 0);
@@ -99,8 +116,10 @@ export class World {
   private WU: Record<string, THREE.IUniform>;
   private sunDisc: THREE.Sprite; private sunHalo: THREE.Sprite;
   private sunCache = new Map<number, THREE.Vector3>();
-  private cloudMaps: Record<"day" | "golden", THREE.Texture[]>;
+  private cloudMaps: Record<"day" | "golden" | "night", THREE.Texture[]>;
   private fgs: { o: THREE.Object3D; a: number; b: number }[] = [];
+  private lamp = new THREE.Group();
+  private lampGlow: THREE.Sprite; private lampCore: THREE.Sprite; private lampPool: THREE.Mesh;
   private deckTop: THREE.BufferGeometry; private deckSide: THREE.BufferGeometry;
   private posts: THREE.InstancedMesh; private hangers: THREE.InstancedMesh; private ribs: THREE.InstancedMesh; private bunting: THREE.InstancedMesh;
   private rails: Strand[] = []; private chains: Strand[] = []; private stays: Strand[] = [];
@@ -143,7 +162,7 @@ export class World {
     this.sun.shadow.mapSize.set(4096, 4096);
     this.fill = new THREE.DirectionalLight("#9fb8ff", 0.35);
     R.add(this.hemi, this.sun, this.sun.target, this.fill, this.fill.target);
-    this.cloudMaps = { day: [0, 1, 2, 3].map((k) => cloudHD(k, LOOK.day.cloud)), golden: [0, 1, 2, 3].map((k) => cloudHD(k, LOOK.golden.cloud)) };
+    this.cloudMaps = { day: [0, 1, 2, 3].map((k) => cloudHD(k, LOOK.day.cloud)), golden: [0, 1, 2, 3].map((k) => cloudHD(k, LOOK.golden.cloud)), night: [0, 1, 2, 3].map((k) => cloudHD(k, LOOK.night.cloud)) };
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2 + 0.3, d = 620 + (i % 3) * 60;
       const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: this.cloudMaps.day[i % 4], color: new THREE.Color(1.1, 1.1, 1.1), transparent: true, depthWrite: false, fog: false }));
@@ -316,13 +335,43 @@ export class World {
     this.sign.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
     R.add(this.sign);
     this.swing = new Actor(R, swingGeo);
-    // the CAM agent's near framing objects: built once, never passed through the sight-line filter, toggled per frame
+    // the CAM agent's near framing objects: built once, toggled per frame.
+    // sightLineSafe entries are checked against the centre sight line; a prop that blocks the lens-to-subject ray is skipped.
     for (const fg of FOREGROUND) {
       const o = kitClone(kit, fg.kit, fg.s ?? 1);
       if (!o) continue;
-      o.position.set(...fg.pos); o.rotation.y = fg.yaw ?? 0; o.visible = false;
+      o.position.set(...fg.pos); o.rotation.y = fg.yaw ?? 0;
+      if (fg.sightLineSafe) {
+        const box = new THREE.Box3().setFromObject(o);
+        if (inTheWay(box.min.x, box.max.x, box.min.y, box.max.y, box.min.z, box.max.z, true)) continue;
+      }
+      o.visible = false;
       this.fgs.push({ o, a: fg.a, b: fg.b }); R.add(o);
     }
+
+    // ---- practical lantern (Benchmark Shot 3) ----
+    // Built last so its materials cannot shift the shared Kenney material cache used by the town/vegetation.
+    // The warm key is directional light 0 re-aimed per shot (world materials and character cards only read that
+    // light); these three pieces carry the source itself: a warm pool on the planks, the glass halo, and a hot
+    // core. The Kenney lantern body gets the ink line and casts no shadow (it IS the light).
+    this.lampPool = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+      map: poolTex(), color: new THREE.Color(1.4, 0.55, 0.18), transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, fog: false, polygonOffset: true, polygonOffsetFactor: -2,
+    }));
+    this.lampPool.scale.set(3.4, 1, 3.0); this.lampPool.position.y = 0.018; this.lampPool.renderOrder = 3;
+    this.lampGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(1.8, 0.72, 0.2),
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    this.lampGlow.scale.setScalar(1.5); this.lampGlow.position.y = 0.98; this.lampGlow.renderOrder = 5;
+    this.lampCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(3.0, 1.55, 0.55),
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    this.lampCore.scale.setScalar(0.34); this.lampCore.position.y = 0.95; this.lampCore.renderOrder = 6;
+    const lantern = kitClone(kit, "lantern", 1.3);
+    if (lantern) {
+      lantern.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = false; m.receiveShadow = true; } });
+      this.lamp.add(lantern);
+    }
+    for (const o of [this.lampPool, this.lampGlow, this.lampCore]) { o.layers.set(NOINK); this.lamp.add(o); }
+    this.lamp.visible = false; R.add(this.lamp);
   }
 
   /** camera-relative sun, frozen per shot: the shot's mean view direction turned by az toward screen right, lifted by el */
@@ -367,6 +416,12 @@ export class World {
     this.fill.intensity = 0; // not used by the two-tone shading
     TONE.uLitCol.value.set(...L.lit); TONE.uShadeCol.value.set(...L.shade); TONE.uShadeLift.value.set(...L.lift);
     TONE.uLambert.value = L.lambert; TONE.uSideK.value = L.sideK; TONE.uTerm.value = L.term; TONE.uBounce.value.set(...LOOK[s.light].bounce); TONE.uSat.value = LOOK[s.light].sat;
+    const lampOn = s.light === "night";
+    TONE.uLampR.value = lampOn ? 5.5 : 0;
+    if (lampOn) { // centre of the practical's falloff, in the same (negated view) space as vViewPosition
+      this.v.set(LAMP_AT[0], deckY(LAMP_AT[2], b) + 0.98, LAMP_AT[2]);
+      TONE.uLampPos.value.copy(this.v).applyMatrix4(cam.matrixWorldInverse).negate();
+    }
     CHAR.uCharTint.value.set(...L.charTint); CHAR.uCharShade.value = L.charShade; CHAR.uGrad.value = L.charGrad;
     CHAR.uBodyGrad.value = L.bodyGrad; CHAR.uSideTint.value.set(...L.sideTint);
     // ---- sky, fog (colour = horizon colour, linear fogNear -> fogFar), sun disc + halo, clouds ----
@@ -400,6 +455,8 @@ export class World {
     // ---- bridge ----
     this.poseBridge(b, t, tau, id);
     this.sign.visible = id >= 14;
+    this.lamp.visible = lampOn;
+    if (lampOn) this.lamp.position.set(LAMP_AT[0], deckY(LAMP_AT[2], b), LAMP_AT[2]);
     for (const sm of this.smoke) {
       const u = (t * 0.11 + sm.k) % 1, sz = 3 + u * 9;
       sm.m.position.set(sm.top[0] - u * 18, sm.top[1] + u * 13 + u * u * 4, sm.top[2] + u * 3);
