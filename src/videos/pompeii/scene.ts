@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { Batch, V, quad, tri } from "../bridge/build";
 import { ctex, cobble, grassHD, rep, roofHD, stoneHD, rng } from "../bridge/paint";
 import { NOINK } from "../bridge/ink";
-import { twoTone } from "../bridge/shade";
+import { TONE, twoTone } from "../bridge/shade";
 
 export const POMPEII_FPS = 30;
 export const POMPEII_FRAMES = 420; // 14 s
@@ -438,11 +438,11 @@ class Roman {
 
   constructor(seed: number, tunic: string, female: boolean, cloak = false) {
     this.seed = seed;
-    const skin = lit("skin" + (seed % 3), { color: ["#e8b48a", "#d9a273", "#f0c49a"][seed % 3] });
+    const skin = lit("skin" + (seed % 3), { color: ["#f4ead9", "#efe3d1", "#f8efdf"][seed % 3] });
     const cloth = lit("tunic" + tunic, { color: tunic });
     const hair = lit("hair" + (seed % 4), { color: ["#3a2a20", "#241a16", "#5a3a24", "#6a4a2a"][seed % 4] });
     const dark = lit("sandal", { color: "#4a3024" });
-    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.37, 0.86, 10), cloth);
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.86, 10), cloth);
     torso.position.y = 1.28; this.group.add(torso);
     const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.12, 10), dark);
     belt.position.y = 1.0; this.group.add(belt);
@@ -451,24 +451,29 @@ class Roman {
       skirt.position.y = 0.58; this.group.add(skirt);
     }
     this.head.position.y = 1.94; this.group.add(this.head);
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.215, 14, 12), skin);
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 14), skin);
     this.head.add(skull);
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.225, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.52), hair);
-    cap.position.y = 0.055; this.head.add(cap);
-    const eyeG = new THREE.SphereGeometry(0.027, 7, 6);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.52), hair);
+    cap.position.y = 0.09; this.head.add(cap);
+    const eyeG = new THREE.SphereGeometry(0.034, 8, 6);
     const eyeM = lit("eye", { color: "#1a1412" });
-    for (const ex of [-0.073, 0.073]) {
-      const e = new THREE.Mesh(eyeG, eyeM); e.position.set(ex, 0.015, 0.202); this.head.add(e);
+    for (const ex of [-0.105, 0.105]) {
+      const e = new THREE.Mesh(eyeG, eyeM); e.position.set(ex, 0.035, 0.312); this.head.add(e);
     }
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.018, 0.015), eyeM);
-    mouth.position.set(0, -0.075, 0.213); this.head.add(mouth);
-    const armGeo = new THREE.CylinderGeometry(0.072, 0.06, 0.62, 8);
+    const browGeo = new THREE.BoxGeometry(0.105, 0.026, 0.025);
+    for (const [ex, tilt] of [[-0.105, 0.08], [0.105, -0.08]] as const) {
+      const brow = new THREE.Mesh(browGeo, eyeM);
+      brow.position.set(ex, 0.115, 0.307); brow.rotation.z = tilt; this.head.add(brow);
+    }
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.022, 0.018), eyeM);
+    mouth.position.set(0, -0.12, 0.33); this.head.add(mouth);
+    const armGeo = new THREE.CylinderGeometry(0.036, 0.032, 0.62, 8);
     for (const [g, sx] of [[this.armL, -1], [this.armR, 1]] as const) {
       g.position.set(sx * 0.36, 1.56, 0); this.group.add(g);
       const a = new THREE.Mesh(armGeo, skin); a.position.y = -0.31; g.add(a);
       const hand = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), skin); hand.position.y = -0.64; g.add(hand);
     }
-    const legGeo = new THREE.CylinderGeometry(0.09, 0.075, 0.78, 8);
+    const legGeo = new THREE.CylinderGeometry(0.04, 0.035, 0.78, 8);
     for (const [g, sx] of [[this.legL, -1], [this.legR, 1]] as const) {
       g.position.set(sx * 0.155, 0.88, 0); this.group.add(g);
       const l = new THREE.Mesh(legGeo, skin); l.position.y = -0.39; g.add(l);
@@ -546,9 +551,11 @@ export class PompeiiWorld {
   private chars: Roman[] = [];
   private ash: THREE.Points;
   private ashPos: Float32Array;
+  private ashBase: Float32Array = new Float32Array(0);
   private ashMat: THREE.PointsMaterial;
   private embers: THREE.Points;
   private emberPos: Float32Array;
+  private emberBase: Float32Array = new Float32Array(0);
   private emberMat: THREE.PointsMaterial;
   private slab: THREE.Mesh;
   private dunes: Dune[] = [];
@@ -630,6 +637,7 @@ export class PompeiiWorld {
       this.ashPos[i * 3 + 1] = ra() * 34;
       this.ashPos[i * 3 + 2] = (ra() - 0.5) * 90;
     }
+    this.ashBase = this.ashPos.slice();
     const ag = new THREE.BufferGeometry();
     ag.setAttribute("position", new THREE.BufferAttribute(this.ashPos, 3));
     this.ashMat = new THREE.PointsMaterial({ size: 0.16, map: dotTex(), transparent: true, opacity: 0, depthWrite: false, alphaTest: 0.02, sizeAttenuation: true, fog: true, color: "#c8c0b4" });
@@ -643,6 +651,7 @@ export class PompeiiWorld {
       this.emberPos[i * 3 + 1] = re() * 18;
       this.emberPos[i * 3 + 2] = (re() - 0.5) * 70;
     }
+    this.emberBase = this.emberPos.slice();
     const eg = new THREE.BufferGeometry();
     eg.setAttribute("position", new THREE.BufferAttribute(this.emberPos, 3));
     this.emberMat = new THREE.PointsMaterial({ size: 0.24, map: dotTex(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, fog: false, color: new THREE.Color(3.2, 1.0, 0.25) });
@@ -687,6 +696,17 @@ export class PompeiiWorld {
     const { shot, u } = localU(f);
     const t = f / POMPEII_FPS;
     const look = LOOKS[shot];
+
+    // Apply this shot's actual two-tone lighting to every Pompeii world material.
+    TONE.uLitCol.value.set(...look.lit);
+    TONE.uShadeCol.value.set(...look.shade);
+    TONE.uShadeLift.value.set(...look.lift);
+    TONE.uLambert.value = look.lambert;
+    TONE.uSideK.value = look.sideK;
+    TONE.uTerm.value = look.term;
+    TONE.uSat.value = look.sat;
+    TONE.uBounce.value.set(0, 0, 0);
+    TONE.uLampR.value = 0;
 
     const smooth = (a: number, b: number, x: number) =>
       THREE.MathUtils.smoothstep(x, a, b);
@@ -826,21 +846,14 @@ export class PompeiiWorld {
 
     this.ashMat.opacity = ashAmount * 0.72;
 
+    const wrap = (value: number, span: number) => ((value % span) + span) % span;
     for (let i = 0; i < this.ashPos.length / 3; i++) {
       const j = i * 3;
-
-      this.ashPos[j + 1] -= 0.13 + (i % 7) * 0.012;
-      this.ashPos[j] += Math.sin(t * 0.8 + i * 0.13) * 0.018;
-      this.ashPos[j + 2] += 0.025;
-
-      if (
-        this.ashPos[j + 1] < 0 ||
-        this.ashPos[j + 2] > 48
-      ) {
-        this.ashPos[j] = Math.sin(i * 12.989) * 42;
-        this.ashPos[j + 1] = 18 + (i % 17) * 0.9;
-        this.ashPos[j + 2] = -42 + (i % 19) * 4.5;
-      }
+      const fallSpeed = 0.13 + (i % 7) * 0.012;
+      // Derive every particle from its seeded start position and absolute frame time.
+      this.ashPos[j] = this.ashBase[j] + Math.sin(t * 0.8 + i * 0.13) * 0.55;
+      this.ashPos[j + 1] = wrap(this.ashBase[j + 1] - fallSpeed * f, 34);
+      this.ashPos[j + 2] = wrap(this.ashBase[j + 2] + 0.75 * t + 45, 90) - 45;
     }
 
     this.ash.geometry.attributes.position.needsUpdate = true;
@@ -856,19 +869,11 @@ export class PompeiiWorld {
 
     for (let i = 0; i < this.emberPos.length / 3; i++) {
       const j = i * 3;
-
-      this.emberPos[j + 1] += 0.055 + (i % 5) * 0.012;
-      this.emberPos[j] += Math.sin(t * 2 + i) * 0.025;
-      this.emberPos[j + 2] -= 0.035;
-
-      if (
-        this.emberPos[j + 1] > 22 ||
-        this.emberPos[j + 2] < -42
-      ) {
-        this.emberPos[j] = Math.sin(i * 7.13) * 36;
-        this.emberPos[j + 1] = 0;
-        this.emberPos[j + 2] = 12 + (i % 13) * 2;
-      }
+      const riseSpeed = 0.055 + (i % 5) * 0.012;
+      // As with ash, calculate positions from the seeded origin and frame number.
+      this.emberPos[j] = this.emberBase[j] + Math.sin(t * 2 + i) * 0.75;
+      this.emberPos[j + 1] = wrap(this.emberBase[j + 1] + riseSpeed * f, 22);
+      this.emberPos[j + 2] = wrap(this.emberBase[j + 2] - 1.05 * t + 42, 54) - 42;
     }
 
     this.embers.geometry.attributes.position.needsUpdate = true;
