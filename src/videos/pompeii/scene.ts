@@ -77,7 +77,7 @@ export const cameraAt = (f: number): CamState => {
   const { shot, u } = localU(f);
   const t = ease(u);
   if (shot === 1) {
-    return { pos: lerp3([2.4, 54, 118], [0.6, 30, 82], t), look: lerp3([0, 8, -14], [0, 10, -24], t), fov: lerp(47, 41, t), roll: 0 };
+    return { pos: lerp3([2.4, 13.5, 43], [0.6, 10.5, 35], t), look: lerp3([0, 4.8, -12], [0, 6.2, -22], t), fov: lerp(48, 43, t), roll: 0 };
   }
   if (shot === 2) {
     return { pos: lerp3([3.2, 1.75, 21], [6.2, 2.25, 27], t), look: lerp3([-1, 5.2, -18], [-1.6, 7.2, -24], t), fov: lerp(50, 45, t), roll: 0.006 * Math.sin(u * 5) };
@@ -438,9 +438,12 @@ class Roman {
 
   constructor(seed: number, tunic: string, female: boolean, cloak = false) {
     this.seed = seed;
-    const skin = lit("skin" + (seed % 3), { color: ["#f4ead9", "#efe3d1", "#f8efdf"][seed % 3] });
+    // Seeds may be fractional; material palette lookups must use integer indices.
+    const skinIndex = Math.abs(Math.floor(seed)) % 3;
+    const hairIndex = Math.abs(Math.floor(seed)) % 4;
+    const skin = lit("skin" + skinIndex, { color: ["#f4ead9", "#efe3d1", "#f8efdf"][skinIndex] });
     const cloth = lit("tunic" + tunic, { color: tunic });
-    const hair = lit("hair" + (seed % 4), { color: ["#3a2a20", "#241a16", "#5a3a24", "#6a4a2a"][seed % 4] });
+    const hair = lit("hair" + hairIndex, { color: ["#3a2a20", "#241a16", "#5a3a24", "#6a4a2a"][hairIndex] });
     const dark = lit("sandal", { color: "#4a3024" });
     const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.86, 10), cloth);
     torso.position.y = 1.28; this.group.add(torso);
@@ -679,7 +682,7 @@ export class PompeiiWorld {
 
     for (let i = 0; i < CHAR_CFG.length; i++) {
       const c = new Roman(11 + i * 7.3, TUNICS[i % TUNICS.length], CHAR_CFG[i].female, CHAR_CFG[i].cloak);
-      c.group.position.set(CHAR_CFG[i].x0, 0, CHAR_CFG[i].z0); c.group.rotation.y = CHAR_CFG[i].ry;
+      c.group.position.set(CHAR_CFG[i].x0, 0, CHAR_CFG[i].z0); c.group.scale.setScalar(1.12); c.group.rotation.y = CHAR_CFG[i].ry;
       this.chars.push(c); this.root.add(c.group);
     }
 
