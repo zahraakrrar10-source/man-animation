@@ -14,7 +14,6 @@ import {
   cameraAt,
   focusAt,
   shotAt,
-  POMPEII_FRAMES,
 } from "./scene";
 
 const fwd = new THREE.Vector3();
